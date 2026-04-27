@@ -26,6 +26,7 @@ from operator import methodcaller
 import re
 
 from google.protobuf import descriptor
+from google.protobuf import descriptor_pool
 from google.protobuf import message_factory
 from google.protobuf import symbol_database
 from google.protobuf.internal import type_checkers
@@ -288,7 +289,17 @@ class _Printer(object):
         return None
       enum_value = field.enum_type.values_by_number.get(value, None)
       if enum_value is not None:
-        return enum_value.name
+        try:
+          pool = self.descriptor_pool or descriptor_pool.Default()
+          extension_descriptor = pool.FindExtensionByName('pb.enumvalue.json')
+        except KeyError:
+          pass
+        else:
+          if enum_value.GetOptions().HasExtension(extension_descriptor):
+            return (
+                enum_value.GetOptions().Extensions[extension_descriptor].string
+            )
+          return enum_value.name
       else:
         if field.enum_type.is_closed:
           raise SerializeToJsonError(
@@ -944,6 +955,24 @@ def _ConvertScalarFieldValue(value, field, path, require_str=False):
     elif field.cpp_type == descriptor.FieldDescriptor.CPPTYPE_ENUM:
       # Convert an enum value.
       enum_value = field.enum_type.values_by_name.get(value, None)
+      # First check to see if we have a custom enum string.
+      if enum_value is None:
+        try:
+          extension_descriptor = descriptor_pool.Default().FindExtensionByName(
+              'pb.enumvalue.json'
+          )
+        except KeyError:
+          pass
+        else:
+          for ev in field.enum_type.values:
+            if ev.GetOptions().HasExtension(extension_descriptor):
+              if (
+                  ev.GetOptions().Extensions[extension_descriptor].string
+                  == value
+              ):
+                enum_value = ev
+                break
+      # If not, try parsing it as an integer.
       if enum_value is None:
         try:
           number = int(value)

@@ -13,10 +13,13 @@
 // clang-format on
 #include <assert.h>
 #include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include "python/descriptor.h"
 #include "python/python_api.h"
 #include "upb/hash/int_table.h"
+#include "upb/mem/arena.h"
 #include "upb/reflection/def.h"
 
 #define PYUPB_PROTOBUF_PUBLIC_PACKAGE "google.protobuf"
@@ -121,7 +124,7 @@ PyUpb_WeakMap* PyUpb_WeakMap_New(void);
 void PyUpb_WeakMap_Free(PyUpb_WeakMap* map);
 
 // Adds the given object to the map, indexed by the given key.
-void PyUpb_WeakMap_Add(PyUpb_WeakMap* map, const void* key, PyObject* py_obj);
+void PyUpb_WeakMap_Add(PyUpb_WeakMap* map, const void* key, PyObject** py_obj);
 
 // Removes the given key from the cache. It must exist in the cache currently.
 void PyUpb_WeakMap_Delete(PyUpb_WeakMap* map, const void* key);
@@ -140,6 +143,12 @@ PyObject* PyUpb_WeakMap_Get(PyUpb_WeakMap* map, const void* key);
 // }
 //
 // Note that the callee does not own a ref on the returned `obj`.
+//
+// WARNING: The iterator will hold a lock on the weak map until the iteration
+// is complete. The caller must complete the iteration, otherwise the lock will
+// never be released. The only function that can be called on the weak map
+// during iteration is PyUpb_WeakMap_DeleteIter(), which will delete the
+// current item but not change the iterator.
 bool PyUpb_WeakMap_Next(PyUpb_WeakMap* map, const void** key, PyObject** obj,
                         intptr_t* iter);
 void PyUpb_WeakMap_DeleteIter(PyUpb_WeakMap* map, intptr_t* iter);
@@ -151,8 +160,7 @@ void PyUpb_WeakMap_DeleteIter(PyUpb_WeakMap* map, intptr_t* iter);
 // The object cache is a global WeakMap for mapping upb objects to the
 // corresponding wrapper.
 void PyUpb_ObjCache_Add(const void* key, PyObject* py_obj);
-void PyUpb_KnownObjCache_Add(PyUpb_WeakMap* cache, const void* key,
-                             PyObject* py_obj);
+
 void PyUpb_ObjCache_Delete(const void* key);
 PyObject* PyUpb_ObjCache_Get(const void* key);  // returns NULL if not present.
 PyUpb_WeakMap* PyUpb_ObjCache_Instance(void);
@@ -163,6 +171,7 @@ PyUpb_WeakMap* PyUpb_ObjCache_Instance(void);
 
 PyObject* PyUpb_Arena_New(void);
 upb_Arena* PyUpb_Arena_Get(PyObject* arena);
+PyUpb_WeakMap* PyUpb_Arena_GetCache(PyObject* arena);
 
 // -----------------------------------------------------------------------------
 // Utilities
